@@ -805,10 +805,9 @@ class BERTNERPredictor:
         self.estimator = __mb.estimator
         self.predict_batch_size = predict_batch_size
 
-
     def predict(self, sentences=None, subword=False):
         if sentences is None:
-            predict_input_fn = self.db.make_input_fn()
+            predict_input_fn = self.db.make_input_fn(mode="predict")
             gold = True
         else:
             predict_input_fn = self.db.make_input_fn_from_sentences(sentences)
