@@ -2,9 +2,31 @@ import sys
 import regex as re
 import mojimoji
 from pyknp import KNP, BList, MList, Juman, Bunsetsu, Tag, TList
-from bedore_nlp_modules.knp_modules.knp_error \
-    import MorphTooLongError, InputTooLongError, CharTypeTooLongError, NoEOSError, NoResultError
 from typing import Tuple, Set, Iterable, Generator, Optional, Union, Dict
+
+
+class KnpError(Exception):
+    pass
+
+
+class MorphTooLongError(KnpError):
+    pass
+
+
+class CharTypeTooLongError(KnpError):
+    pass
+
+
+class InputTooLongError(KnpError):
+    pass
+
+
+class NoEOSError(KnpError):
+    pass
+
+
+class NoResultError(KnpError):
+    pass
 
 
 class KnpBase:
