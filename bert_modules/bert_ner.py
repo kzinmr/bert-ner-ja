@@ -247,7 +247,7 @@ class DataBuilder:
         for i, token in enumerate(tokens):
             ntokens.append(token)
             segment_ids.append(0)
-            # kblabel_ids.append(self.label2id.get(kblabels[i], 'O'))
+            # kblabel_ids.append(self.label2id.get(kblabels[i], self.label2id['O']))
             label_ids.append(self.label2id.get(labels[i], self.label2id['O']))
         ntokens.append("[SEP]")
         segment_ids.append(0)
