@@ -183,7 +183,7 @@ class DataBuilder:
 
         # labels_path は学習と予測時と同じものである必要がある
         label_list = self.processor.get_labels()
-        self.label2id = {label: idx for idx, label in enumerate(label_list)}
+        self.label2id = {label: idx for idx, label in enumerate(label_list, 1)}
         # with open(os.path.join(output_dir, "label2id.pkl"), 'wb') as f:
         #     pickle.dump(self.label2id, f)
         # NOTE: [NULL] も考慮

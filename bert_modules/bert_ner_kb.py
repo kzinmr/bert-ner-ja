@@ -179,7 +179,7 @@ class DataBuilder:
 
         # labels_path は学習と予測時と同じものである必要がある
         label_list = self.processor.get_labels()
-        self.label2id = {label: idx for idx, label in enumerate(label_list)}
+        self.label2id = {label: idx for idx, label in enumerate(label_list, 1)}
         # with open(os.path.join(output_dir, "label2id.pkl"), 'wb') as f:
         #     pickle.dump(self.label2id, f)
         # NOTE: [NULL] も考慮
@@ -760,7 +760,6 @@ class BERTNERTrainer:
         # Load training data
         self.db = DataBuilder(data_dir, labels_path, vocab_path, output_dir, max_seq_length, drop_remainder, mode="train")
 
-        print(self.db.num_examples)
         assert drop_remainder and self.db.num_examples > train_batch_size
 
         # Build model for training
