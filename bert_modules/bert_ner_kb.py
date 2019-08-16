@@ -837,8 +837,8 @@ class BERTNERPredictor:
 
 
 if __name__=='__main__':
-    data_dir = '../input_kb_sample'  # must contain 'train.txt', 'dev.txt', 'test.txt'
-    labels_path = '../input_kb_sample/labels_enesub.txt'
+    data_dir = '../input'  # must contain 'train.txt', 'dev.txt', 'test.txt'
+    labels_path = '../input/labels_enesub.txt'
     output_dir = '../output_result'
     model_dir = '../model_result'
     bert_dir = '../Japanese_L-12_H-768_A-12_E-30_BPE'
