@@ -15,4 +15,5 @@
 
 ## 導入
 - install `pipenv`
+  - GPU利用時は `tensorflow-gpu` に書き換える
 - `pipenv install`
