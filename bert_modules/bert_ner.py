@@ -581,7 +581,7 @@ class ModelBuilder:
             save_checkpoints_steps=save_checkpoints_steps,
         )
 
-        # num_train_steps = int(num_train_examples / train_batch_size * num_train_epochs)
+        # num_train_steps = int(num_examples / train_batch_size * num_train_epochs)
         if num_train_steps is not None and warmup_proportion is not None and learning_rate is not None:
 
             num_warmup_steps = int(num_train_steps * warmup_proportion)
@@ -765,7 +765,7 @@ class BERTNERTrainer:
         assert drop_remainder and self.db.num_examples > train_batch_size
 
         # Build model for training
-        self.num_train_steps = int(self.db.num_train_examples / train_batch_size * num_train_epochs)
+        self.num_train_steps = int(self.db.num_examples / train_batch_size * num_train_epochs)
         __mb = ModelBuilder(
             self.db.num_labels, model_dir, bert_config_file, init_checkpoint, max_seq_length,
             save_checkpoints_steps,
