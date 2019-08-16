@@ -82,7 +82,7 @@ class DataProcessor(object):
          - input_file must contain eos character ('。')
          - input_file must end with '\n'
         """
-        with open(input_file) as f:
+        with open(input_file, encoding='utf-8') as f:
             lines = []
             words = []
             kblabels = []
@@ -116,7 +116,7 @@ class NerProcessor(DataProcessor):
         self.data_dir = data_dir
 
         labels = []
-        with open(label_vocab_path) as f:
+        with open(label_vocab_path, encoding='utf-8') as f:
             labels = [l.strip() for l in f.read().split('\n') if l.strip()]
         assert len(labels) > 0
         assert all(l.startswith('B-') or l.startswith('I-') for l in labels)
@@ -431,7 +431,7 @@ class DataBuilder:
 
     def export_result(self, result):
         output_eval_file = os.path.join(self.output_dir, "eval_results.txt")
-        with open(output_eval_file, "w") as writer:
+        with open(output_eval_file, "w", encoding='utf-8') as writer:
             tf.compat.v1.logging.info("***** Eval results *****")
             for key in sorted(result.keys()):
                 tf.compat.v1.logging.info("  %s = %s", key, str(result[key]))
@@ -554,7 +554,7 @@ class SubwordWordConverter:
                     output_line += "\n\n"
                     output_sentences.append(output_line)
         if self.export_file is not None:
-            with open(self.export_file, 'w') as writer:
+            with open(self.export_file, 'w', encoding='utf-8') as writer:
                 for output_sentence in output_sentences:
                     writer.write(output_sentence)
 
