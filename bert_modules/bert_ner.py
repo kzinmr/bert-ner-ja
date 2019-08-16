@@ -95,7 +95,7 @@ class DataProcessor(object):
                 if contents.startswith("-DOCSTART-"):
                     words.append('')
                     continue
-                if len(words) > 0 and len(contents) == 0 and words[-1] == eos:
+                if len(words) > 0 and len(contents) == 0:  # and words[-1] == eos:
                     label_str = ' '.join(
                         [label for label in labels if len(label) > 0])
                     # kblabel_str = ' '.join(
@@ -838,7 +838,7 @@ class BERTNERPredictor:
 
 
 if __name__=='__main__':
-    data_dir = '../input'  # must contain 'train.txt', 'dev.txt', 'test.txt'
+    data_dir = '../input_sample'  # must contain 'train.txt', 'dev.txt', 'test.txt'
     labels_path = '../input/labels_enesub.txt'
     output_dir = '../output_result'
     model_dir = '../model_result'

@@ -90,7 +90,7 @@ class DataProcessor(object):
             f_filtered = [line for line in f if line == '\n' or len(line.strip().split(' ')) == 4]
             for line in f_filtered:
                 contents = line.strip()
-                if len(words) > 0 and len(contents) == 0 and words[-1] == eos:
+                if len(words) > 0 and len(contents) == 0:  # and words[-1] == eos:
 
                     label_str = ' '.join(
                         [label for label in labels if len(label) > 0])
@@ -836,7 +836,7 @@ class BERTNERPredictor:
 
 
 if __name__=='__main__':
-    data_dir = '../input_kb'  # must contain 'train.txt', 'dev.txt', 'test.txt'
+    data_dir = '../input_kb_sample'  # must contain 'train.txt', 'dev.txt', 'test.txt'
     labels_path = '../input_kb/labels_enesub.txt'
     output_dir = '../output_result'
     model_dir = '../model_result'
