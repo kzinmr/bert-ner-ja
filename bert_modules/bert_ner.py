@@ -762,7 +762,7 @@ class BERTNERTrainer:
         # Load training data
         self.db = DataBuilder(data_dir, labels_path, vocab_path, output_dir, max_seq_length, drop_remainder, mode="train")
 
-        assert drop_remainder and self.db.num_examples > train_batch_size
+        assert not drop_remainder or drop_remainder and self.db.num_examples > train_batch_size
 
         # Build model for training
         self.num_train_steps = int(self.db.num_examples / train_batch_size * num_train_epochs)
@@ -844,19 +844,20 @@ if __name__=='__main__':
     model_dir = '../model_result'
     bert_dir = '../Japanese_L-12_H-768_A-12_E-30_BPE'
 
-    # bert_trainer = BERTNERTrainer(
-    #                 data_dir,
-    #                 labels_path,
-    #                 output_dir,
-    #                 bert_dir,
-    #                 model_dir,
-    #                 max_seq_length=128,
-    #                 save_checkpoints_steps=1000, learning_rate=5e-5,
-    #                 train_batch_size=8, eval_batch_size=8, warmup_proportion=0.1,
-    #                 num_train_epochs=1
-    #                 )
-    # bert_trainer.train()
-    # bert_trainer.evaluate()
+    bert_trainer = BERTNERTrainer(
+                    data_dir,
+                    labels_path,
+                    output_dir,
+                    bert_dir,
+                    model_dir,
+                    max_seq_length=128,
+                    save_checkpoints_steps=1000, learning_rate=5e-5,
+                    train_batch_size=8, eval_batch_size=8, warmup_proportion=0.1,
+                    num_train_epochs=1,
+                    drop_remainder=True
+                    )
+    bert_trainer.train()
+    bert_trainer.evaluate()
 
     bert_predictor = BERTNERPredictor(
                     labels_path,

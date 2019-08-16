@@ -760,7 +760,7 @@ class BERTNERTrainer:
         # Load training data
         self.db = DataBuilder(data_dir, labels_path, vocab_path, output_dir, max_seq_length, drop_remainder, mode="train")
 
-        assert drop_remainder and self.db.num_examples > train_batch_size
+        assert not drop_remainder or drop_remainder and self.db.num_examples > train_batch_size
 
         # Build model for training
         self.num_train_steps = int(self.db.num_examples / train_batch_size * num_train_epochs)
@@ -836,8 +836,8 @@ class BERTNERPredictor:
 
 
 if __name__=='__main__':
-    data_dir = '../input'  # must contain 'train.txt', 'dev.txt', 'test.txt'
-    labels_path = '../input/labels_enesub.txt'
+    data_dir = '../input_kb'  # must contain 'train.txt', 'dev.txt', 'test.txt'
+    labels_path = '../input_kb/labels_enesub.txt'
     output_dir = '../output_result'
     model_dir = '../model_result'
     bert_dir = '../Japanese_L-12_H-768_A-12_E-30_BPE'
@@ -850,7 +850,7 @@ if __name__=='__main__':
                     model_dir,
                     max_seq_length=128,
                     save_checkpoints_steps=1000, learning_rate=5e-5,
-                    train_batch_size=2, eval_batch_size=2, warmup_proportion=0.1,
+                    train_batch_size=8, eval_batch_size=8, warmup_proportion=0.1,
                     num_train_epochs=1
                     )
     bert_trainer.train()
@@ -863,7 +863,7 @@ if __name__=='__main__':
                     model_dir,
                     data_dir=data_dir,
                     max_seq_length=128,
-                    predict_batch_size=2,
+                    predict_batch_size=8,
                     drop_remainder=True
                     )
     bert_predictor.predict()
