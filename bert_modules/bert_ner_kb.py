@@ -102,7 +102,7 @@ class DataProcessor(object):
                     words = []
                     kblabels = []
                     labels = []
-                else:
+                elif len(line.strip().split(' ')) > 3:
                     words.append(line.strip().split(' ')[0])
                     kblabels.append(line.strip().split(' ')[2])
                     labels.append(line.strip().split(' ')[-1])

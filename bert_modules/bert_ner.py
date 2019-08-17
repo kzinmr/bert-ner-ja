@@ -89,13 +89,8 @@ class DataProcessor(object):
             labels = []
             for line in f:
                 contents = line.strip()
-                word = line.strip().split(' ')[0]
-                # kblabel = line.strip().split(' ')[2]
-                label = line.strip().split(' ')[-1]
-                if contents.startswith("-DOCSTART-"):
-                    words.append('')
-                    continue
                 if len(words) > 0 and len(contents) == 0:  # and words[-1] == eos:
+
                     label_str = ' '.join(
                         [label for label in labels if len(label) > 0])
                     # kblabel_str = ' '.join(
@@ -106,10 +101,10 @@ class DataProcessor(object):
                     words = []
                     # kblabels = []
                     labels = []
-                    continue
-                words.append(word)
-                # kblabels.append(kblabel)
-                labels.append(label)
+                elif len(line.strip().split(' ')) > 1:
+                    words.append(line.strip().split(' ')[0])
+                    # kblabels.append(line.strip().split(' ')[2])
+                    labels.append(line.strip().split(' ')[-1])
 
             return lines
 
