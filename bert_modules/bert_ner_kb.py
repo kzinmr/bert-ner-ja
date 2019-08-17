@@ -836,34 +836,50 @@ class BERTNERPredictor:
 
 
 if __name__=='__main__':
-    data_dir = '../input_kb_sample'  # must contain 'train.txt', 'dev.txt', 'test.txt'
+    data_dir = '../input_kb'  # must contain 'train.txt', 'dev.txt', 'test.txt'
     labels_path = '../input_kb/labels_enesub.txt'
     output_dir = '../output_result'
     model_dir = '../model_result'
     bert_dir = '../Japanese_L-12_H-768_A-12_E-30_BPE'
 
-    bert_trainer = BERTNERTrainer(
-                    data_dir,
-                    labels_path,
-                    output_dir,
-                    bert_dir,
-                    model_dir,
-                    max_seq_length=128,
-                    save_checkpoints_steps=1000, learning_rate=5e-5,
-                    train_batch_size=8, eval_batch_size=8, warmup_proportion=0.1,
-                    num_train_epochs=1
-                    )
-    bert_trainer.train()
-    bert_trainer.evaluate()
 
-    bert_predictor = BERTNERPredictor(
-                    labels_path,
-                    output_dir,
-                    bert_dir,
-                    model_dir,
-                    data_dir=data_dir,
-                    max_seq_length=128,
-                    predict_batch_size=8,
-                    drop_remainder=True
-                    )
-    bert_predictor.predict()
+    for i in range(1, 4):
+        bert_trainer = BERTNERTrainer(
+                        data_dir,
+                        labels_path,
+                        output_dir,
+                        bert_dir,
+                        model_dir,
+                        max_seq_length=128,
+                        save_checkpoints_steps=1000, learning_rate=5e-5,
+                        train_batch_size=8, eval_batch_size=8, warmup_proportion=0.1,
+                        num_train_epochs=i
+                        )
+        bert_trainer.train()
+        bert_trainer.evaluate()
+
+        bert_predictor = BERTNERPredictor(
+                        labels_path,
+                        output_dir,
+                        bert_dir,
+                        model_dir,
+                        data_dir=data_dir,
+                        max_seq_length=128,
+                        predict_batch_size=8,
+                        drop_remainder=True
+                        )
+        result = bert_predictor.predict()
+
+        from sklearn_crfsuite import metrics
+        with open(labels_path) as f:
+            LABELS = [line for line in f.read().split('\n')]
+
+
+        y_pred = [[l['pred'] for l in s] for s in result]
+        y_gold = [[l['gold'] for l in s] for s in result]
+        len(y_pred), len(y_gold)
+
+        print(
+        metrics.flat_classification_report(
+                    y_gold, y_pred, labels=sorted(LABELS), digits=3
+                ))
