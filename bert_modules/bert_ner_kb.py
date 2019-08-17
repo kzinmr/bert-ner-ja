@@ -81,15 +81,16 @@ class DataProcessor(object):
         FIXME: it's buggy:
          - input_file must contain eos character ('。')
          - input_file must end with '\n'
+         - line.rstrip() because line may include '\u3000'
         """
         with open(input_file, encoding='utf-8') as f:
             lines = []
             words = []
             kblabels = []
             labels = []
-            f_filtered = [line for line in f if line == '\n' or len(line.strip().split(' ')) == 4]
+            f_filtered = [line for line in f if line == '\n' or len(line.rstrip().split(' ')) == 4]
             for line in f_filtered:
-                contents = line.strip()
+                contents = line.rstrip()
                 if len(words) > 0 and len(contents) == 0:  # and words[-1] == eos:
 
                     label_str = ' '.join(
@@ -102,10 +103,10 @@ class DataProcessor(object):
                     words = []
                     kblabels = []
                     labels = []
-                elif len(line.strip().split(' ')) > 3:
-                    words.append(line.strip().split(' ')[0])
-                    kblabels.append(line.strip().split(' ')[2])
-                    labels.append(line.strip().split(' ')[-1])
+                elif len(line.rstrip().split(' ')) > 3:
+                    words.append(line.rstrip().split(' ')[0])
+                    kblabels.append(line.rstrip().split(' ')[2])
+                    labels.append(line.rstrip().split(' ')[-1])
 
             return lines
 
