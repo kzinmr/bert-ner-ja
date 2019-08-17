@@ -88,7 +88,8 @@ class DataProcessor(object):
             words = []
             # kblabels = []
             labels = []
-            for line in f:
+            f_filtered = [line for line in f if line == '\n' or len(line.rstrip().split(' ')) == 4]
+            for line in f_filtered:
                 contents = line.rstrip()
                 if len(words) > 0 and len(contents) == 0:  # and words[-1] == eos:
 
@@ -102,7 +103,7 @@ class DataProcessor(object):
                     words = []
                     # kblabels = []
                     labels = []
-                elif len(line.rstrip().split(' ')) > 1:
+                elif len(line.rstrip().split(' ')) == 4:
                     words.append(line.rstrip().split(' ')[0])
                     # kblabels.append(line.rstrip().split(' ')[2])
                     labels.append(line.rstrip().split(' ')[-1])
