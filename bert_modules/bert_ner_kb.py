@@ -879,9 +879,8 @@ if __name__=='__main__':
 
         y_pred = [[l['pred'] for l in s] for s in result]
         y_gold = [[l['gold'] for l in s] for s in result]
-        len(y_pred), len(y_gold)
 
-        print(
-        metrics.flat_classification_report(
-                    y_gold, y_pred, labels=sorted(LABELS), digits=3
-                ))
+        with open(output_dir + f'/classification_report_epoch{i}.txt', 'w') as f:
+            s = metrics.flat_classification_report(y_gold, y_pred, labels=sorted(LABELS), digits=3)
+            print(s)
+            print(s, file=f)
