@@ -62,7 +62,7 @@ class Span2BIO:
 #                 print(self.word_list[self.end2wordid[span_query[1]]])
 
 
-def register_tags_offset(tokenizer, sentence, entities, type_key='type',
+def tokenize_and_convert_sentence(tokenizer, sentence, entities, type_key='type',
                          begin_at=0):
     # sentenceになりindexが0から始まることへのspan修正
     # sentenceは１文字の区切り文字で区切られると想定
@@ -86,31 +86,26 @@ def register_tags_offset(tokenizer, sentence, entities, type_key='type',
     return span2bio.tokens
 
 
-def register_tags(tokenizer, text, entities, type_key='type'):
+def tokenize_and_convert(tokenizer, text, entities, type_key='type', delimiter=' '):
+
     # sentence splitter
     sentences = text.split('。')
     sentences = [s + '。' for s in sentences]
-    # return [register_tags_offset(tokenizer, sentence, entities, type_key,
-    #                              len('。'.join(sentences[:i])) + 1 if i > 0 else 0)
-    #         for i, sentence in enumerate(sentences)]
-    results = []
+
+    conll_lines = []
     for i, sentence in enumerate(sentences):
         try:
-            r = register_tags_offset(tokenizer, sentence, entities, type_key,
-                                     len(''.join(sentences[:i])) if i > 0 else 0)
-            results.append(r)
+            # spanの絶対位置を合わせるため各文の文字offsetを保持
+            offset = len(''.join(sentences[:i])) if i > 0 else 0
+            tokens = tokenize_and_convert_sentence(tokenizer, sentence, entities, type_key, offset)
+            conll_line = convert_conll_format(tokens, delimiter)
+            if conll_line.strip():
+                conll_lines.append(conll_line)
         except ValueError:
             print('pass', len(text.encode('utf8')))
             continue
 
-    return results
-
-
-def tokenize_and_convert(tokenizer, text, entities, type_key='type', delimiter=' '):
-    # 文単位tokensのリスト
-    tokens_list = register_tags(tokenizer, text, entities, type_key)
-    return '\n\n'.join(convert_conll_format(tokens, delimiter)
-                       for tokens in tokens_list)
+    return '\n\n'.join(conll_lines)
 
 
 if __name__ == '__main__':
@@ -131,25 +126,24 @@ if __name__ == '__main__':
     inpath = Path('gsk-ene-1.1-bccwj-json/')
     assert inpath.exists()
 
-    outpath = Path('gsk-ene-1.1-bccwj-json-jumanpp-irextype/')
+    outpath = Path('gsk-ene-1.1-bccwj-json-jumanpp-type/')
     outpath.mkdir(exist_ok=True)
     knp = KnpBase()
     #   dict_format='unidic', dictionary_path='/usr/local/lib/mecab/dic/unidic')
     import sys
+    conll_txts = ''
     for f in tqdm(inpath.glob('*/*.json'), file=sys.stdout):
         with open(f) as fi:
             jd = json.load(fi)
         text = jd['text']
         entities = jd['entities']
 
-        if not any(bool(e['irex_type']) for e in entities):  # IREX_NETYPEが少なくとも１つ含まれる文のみ対象
+        if not any(bool(e['type']) for e in entities):  # IREX_NETYPEが少なくとも１つ含まれる文のみ対象
             continue
         else:
             i += 1
             # try:
-            conll_txt = tokenize_and_convert(
-                knp, text, entities, 'irex_type')
-
+            conll_txt = tokenize_and_convert(knp, text, entities, 'type')
             if conll_txt:
                 p = Path(f)
                 op = outpath / p.parent.stem
@@ -158,6 +152,12 @@ if __name__ == '__main__':
                 with open(out_filepath, 'wt') as of:
                     of.write(conll_txt)
                     of.write('\n')  # 単純にcatすればよくするため
+                conll_txts += conll_txt + '\n'
             # except Exception as e:
             #     print(e)
             #     print('boo')
+    out_filepath = outpath / Path(f'bccwj-ene-jumanpp-type.txt')
+    conll_txts = '\n\n'.join([s for s in conll_txts.split('\n\n') if s])
+    with open(out_filepath, 'wt') as of:
+        of.write(conll_txts)
+        of.write('\n')
