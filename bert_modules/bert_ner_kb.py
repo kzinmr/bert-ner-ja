@@ -83,12 +83,13 @@ class DataProcessor(object):
          - input_file must end with '\n'
          - line.rstrip() because line may include '\u3000'
         """
+        LINENUM = 5
         with open(input_file, encoding='utf-8') as f:
             lines = []
             words = []
             kblabels = []
             labels = []
-            f_filtered = [line for line in f if line == '\n' or len(line.rstrip().split(' ')) == 4]
+            f_filtered = [line for line in f if line == '\n' or len(line.rstrip().split(' ')) == LINENUM]
             for line in f_filtered:
                 contents = line.rstrip()
                 if len(words) > 0 and len(contents) == 0:  # and words[-1] == eos:
@@ -103,9 +104,9 @@ class DataProcessor(object):
                     words = []
                     kblabels = []
                     labels = []
-                elif len(line.rstrip().split(' ')) == 4:
+                elif len(line.rstrip().split(' ')) == LINENUM:
                     words.append(line.rstrip().split(' ')[0])
-                    kblabels.append(line.rstrip().split(' ')[2])
+                    kblabels.append(line.rstrip().split(' ')[-2])
                     labels.append(line.rstrip().split(' ')[-1])
 
             return lines
@@ -839,8 +840,8 @@ class BERTNERPredictor:
 if __name__=='__main__':
     data_dir = '../input_kb'  # must contain 'train.txt', 'dev.txt', 'test.txt'
     labels_path = '../input_kb/labels_enesub.txt'
-    output_dir = '../output_result'
-    model_dir = '../model_result'
+    output_dir = '../output_result_kb'
+    model_dir = '../model_result_kb'
     bert_dir = '../Japanese_L-12_H-768_A-12_E-30_BPE'
 
 
