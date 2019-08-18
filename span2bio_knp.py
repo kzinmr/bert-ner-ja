@@ -1,32 +1,62 @@
 # import pysnooper
+from itertools import chain
+from pyknp import KNP
 from knp_base import KnpBase
 
 
 def convert_conll_format(tokens, delimiter=' '):
-    return '\n'.join(delimiter.join([t["word"], t["pos"], t["tag"]])
+    return '\n'.join(delimiter.join([t["word"], t["pos"], t["chunk"], t["tag"]])
                      for t in tokens)
 
 
 class Span2BIO:
 
-    def __init__(self, tokenizer, text):
-        self.tokenizer = tokenizer
-        assert self.tokenizer.wakati('') == ''
+    def __init__(self, knp, text):
+        self.knp = knp  # KnpBase(knp=KNP(jumanpp=True, option='-bnst -tab'))
         # with pysnooper.snoop():
-        words = self.tokenizer.juman_parse(text)
+        blist = self.knp.parse(text)
+        words = blist.mrph_list()
+        np_tags = self.annotate_np(blist)
         # 単語のspanを取得 (単語がskipされていることも考慮するのでspanは必ずしも連続しない)
         spans = list(self.generate_spans(text, words))
         self.tokens = [{'span': span,
                         'word': mrph.midasi,
                         'pos': mrph.hinsi,
+                        'chunk': np_tag,
                         'tag': 'O'}
-                       for span, mrph in zip(spans, words)]
+                       for span, mrph, np_tag in zip(spans, words, np_tags)]
 
         self.word_list = [wd['word'] for wd in self.tokens]
         self.begin2wordid = {wd['span'][0]: i
                              for i, wd in enumerate(self.tokens)}
         self.end2wordid = {wd['span'][1]: i
                            for i, wd in enumerate(self.tokens)}
+
+    @staticmethod
+    def __is_jiritsu(mrph):
+        return ('<内容語>' in mrph.fstring or '<準内容語>' in mrph.fstring or '<複合←>' in mrph.fstring)\
+            and (mrph.hinsi in {'名詞', '接尾辞', '接頭辞', '特殊'} or '<名詞的形容詞語幹>' in mrph.fstring)
+
+    @classmethod
+    def __extract_jiritsu(cls, bnst):
+        return [cls.__is_jiritsu(m) for m in bnst.mrph_list()]
+
+    @classmethod
+    def annotate_np(cls, blist):
+        flags = chain.from_iterable([cls.__extract_jiritsu(b) for b in blist])
+        tags = []
+        current_tag = 'O'
+        for f in flags:
+            if not f:
+                tags.append('O')
+                current_tag = 'O'
+            elif current_tag == 'O':
+                tags.append('B-NP')
+                current_tag = 'B-NP'
+            else:
+                tags.append('I-NP')
+                
+        return tags
 
     def generate_spans(self, text, words):
         offset = 0
@@ -128,7 +158,7 @@ if __name__ == '__main__':
 
     outpath = Path('gsk-ene-1.1-bccwj-json-jumanpp-type/')
     outpath.mkdir(exist_ok=True)
-    knp = KnpBase()
+    knp = KnpBase(knp=KNP(jumanpp=True, option='-bnst -tab'))
     #   dict_format='unidic', dictionary_path='/usr/local/lib/mecab/dic/unidic')
     import sys
     conll_txts = ''
@@ -153,11 +183,10 @@ if __name__ == '__main__':
                     of.write(conll_txt)
                     of.write('\n')  # 単純にcatすればよくするため
                 conll_txts += conll_txt + '\n'
-            # except Exception as e:
-            #     print(e)
-            #     print('boo')
     out_filepath = outpath / Path(f'bccwj-ene-jumanpp-type.txt')
-    conll_txts = '\n\n'.join([s for s in conll_txts.split('\n\n') if s])
+    # 2行以上からなる文のみ残す
+    conll_txts = '\n\n'.join([s for s in conll_txts.split('\n\n')
+                              if len([ss for ss in s.split('\n') if ss]) > 1])
     with open(out_filepath, 'wt') as of:
         of.write(conll_txts)
         of.write('\n')
