@@ -794,7 +794,7 @@ def _beam_search_decoder(args):
 def _is_valid_labels(args):
     i, labels_beams = args
     beam_idx = 0
-    for idx, label in enumerate(labels_beams):
+    for idx, labels in enumerate(labels_beams):
         flag = True
         prev_bio, prev_netype, netype = '', '', ''
         for l in labels:
