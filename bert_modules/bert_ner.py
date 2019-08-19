@@ -837,7 +837,7 @@ class BERTNERPredictor:
         labels = [self.db.id2label.get(i, '[NULL]') for i in label_ids if self.db.id2label.get(i, '[NULL]') not in ignore_ids]
 
     @staticmethod
-    def __is_valid_labels(args)
+    def __is_valid_labels(args):
         i, labels_beams = args
         beam_idx = 0
         for idx, label in enumerate(labels_beams):
