@@ -811,17 +811,21 @@ class BERTNERPredictor:
 
     @staticmethod
     def beam_search_decoder(probabilities, k=5):
-        topk_candidates = [(list(), 1.0)]
-        for row in probabilities:
-            topk_candidates = sorted([(seq + [i], score * -np.log(prob + 1e-5))
-                                for seq, score in topk_candidates
-                                for i, prob in enumerate(row)],
-                            key=lambda x: x[1])[:k]
-        return topk_candidates
+        # (n_data, max_sequence_length, n_labels) -> (n_data, k, max_sequence_length)
+        results = []
+        for probability in probabilities:
+            topk_candidates = [(list(), 1.0)]
+            for row in probability:
+                topk_candidates = sorted([(seq + [i], score * -np.log(prob + 1e-5))
+                                          for seq, score in topk_candidates
+                                          for i, prob in enumerate(row)],
+                                         key=lambda x: x[1])[:k]
+            results.append(topk_candidates)
+        return results
 
     @staticmethod
     def greedy_decoder(probabilities):
-        return np.argmax(label_ids_probability, axis=-1)
+        return np.argmax(probabilities, axis=-1)
 
     @staticmethod
     def is_valid_labels(labels):
@@ -854,7 +858,7 @@ class BERTNERPredictor:
         # prediction & make sequence tags word-wise
         label_ids_probability = self.estimator.predict(input_fn=predict_input_fn)
 
-        if self.decoder='greedy':
+        if self.decoder=='greedy':
             label_ids_pred = self.greedy_decoder(label_ids_probability)
         else:
             label_ids_beams = self.beam_search_decoder(label_ids_probability, self.beam_width)
