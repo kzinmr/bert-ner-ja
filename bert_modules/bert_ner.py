@@ -781,7 +781,7 @@ class BERTNERTrainer:
         self.db.export_result(result)
 
 
-def __beam_search_decoder(args):
+def _beam_search_decoder(args):
     probability, k = args
     topk_candidates = [(list(), 1.0)]
     for row in probability:
@@ -791,7 +791,7 @@ def __beam_search_decoder(args):
                                     key=lambda x: x[1])[:k]
     return topk_candidates
 
-def __is_valid_labels(args):
+def _is_valid_labels(args):
     i, labels_beams = args
     beam_idx = 0
     for idx, label in enumerate(labels_beams):
@@ -846,8 +846,8 @@ class BERTNERPredictor:
         args = [(probability, k) for probability in probabilities]
         results = []  # [cls.__beam_search_decoder((probability, k)) for probability in probabilities]
         with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
-            results.append(p.map(__beam_search_decoder, args))
-        return results
+            results.append(p.map(_beam_search_decoder, args))
+        return results[0]
 
     @staticmethod
     def greedy_decoder(probabilities):
@@ -856,7 +856,7 @@ class BERTNERPredictor:
 
     def __convert_labels(self, label_ids):
         ignore_ids = {'X', '[CLS]', '[SEP]', '[NULL]'}
-        labels = [self.db.id2label.get(i, '[NULL]') for i in label_ids if self.db.id2label.get(i, '[NULL]') not in ignore_ids]
+        return [self.db.id2label.get(i, '[NULL]') for i in label_ids if self.db.id2label.get(i, '[NULL]') not in ignore_ids]
 
     def predict(self, sentences=None, subword=False):
         if sentences is None:
@@ -880,7 +880,8 @@ class BERTNERPredictor:
                 args = [(i, labels_beams) for i, labels_beams in enumerate(labels_beams_list)]
                 label_ids_pred_idx = []
                 with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
-                    label_ids_pred_idx.append(p.map(__is_valid_labels, args))    
+                    label_ids_pred_idx.append(p.map(_is_valid_labels, args))
+                label_ids_pred_idx = label_ids_pred_idx[0]
                 label_ids_pred = [label_ids_beams_list[i][beam_idx] for (i, beam_idx) in label_ids_pred_idx]
             else:
                 label_ids_pred = [label_ids_beams[0] for label_ids_beams in label_ids_beams_list]
