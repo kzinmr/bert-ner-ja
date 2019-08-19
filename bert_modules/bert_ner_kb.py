@@ -3,6 +3,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
 import tensorflow as tf
 tf.enable_eager_execution()
 
@@ -661,7 +662,7 @@ class ModelBuilder:
 
             predict = tf.argmax(probabilities, axis=-1)
 
-            return (loss, per_example_loss, logits, predict)
+            return (loss, per_example_loss, logits, probabilities, predict)
 
     def model_fn_builder(self, bert_config, num_labels, init_checkpoint,
                          learning_rate=None, num_train_steps=None, num_warmup_steps=None):
@@ -676,7 +677,7 @@ class ModelBuilder:
 
             is_training = (mode == tf.estimator.ModeKeys.TRAIN)
 
-            (total_loss, per_example_loss, logits, predicts) = self.create_model(bert_config, is_training, features, num_labels)
+            (total_loss, per_example_loss, logits, probabilities, predicts) = self.create_model(bert_config, is_training, features, num_labels)
 
             tvars = tf.compat.v1.trainable_variables()
             initialized_variable_names = {}
@@ -695,7 +696,6 @@ class ModelBuilder:
             output_spec = None
             if learning_rate is not None and num_train_steps is not None and num_warmup_steps is not None:
                 if mode == tf.estimator.ModeKeys.TRAIN:
-                    # use_tpu=None
                     
                     train_op = optimization.create_optimizer(total_loss, learning_rate, num_train_steps, num_warmup_steps, None)
 
@@ -736,7 +736,7 @@ class ModelBuilder:
             elif mode == tf.estimator.ModeKeys.PREDICT:
                 output_spec = tf.contrib.tpu.TPUEstimatorSpec(
                     mode=mode,
-                    predictions=predicts,  # {"probabilities": probabilities},
+                    predictions=probabilities,
                     scaffold_fn=None)
 
             return output_spec
@@ -788,7 +788,8 @@ class BERTNERPredictor:
     def __init__(self, labels_path, output_dir, bert_dir, model_dir,
                     data_dir=None,
                     max_seq_length=128, predict_batch_size=8,
-                    drop_remainder=True):
+                    drop_remainder=True,
+                    decoder='beam', beam_width=5, valid_sequence=True):
 
 
         bert_config_file = os.path.join(bert_dir, 'bert_config.json')
@@ -804,8 +805,45 @@ class BERTNERPredictor:
                             predict_batch_size=predict_batch_size)
         self.estimator = __mb.estimator
         self.predict_batch_size = predict_batch_size
+        self.decoder = decoder
+        self.beam_width = beam_width
+        self.valid_sequence = valid_sequence
 
-    def predict(self, sentences=None, subword=False):
+    @staticmethod
+    def beam_search_decoder(probabilities, k=5):
+        topk_candidates = [(list(), 1.0)]
+        for row in probabilities:
+            topk_candidates = sorted([(seq + [i], score * -np.log(prob + 1e-5))
+                                for seq, score in topk_candidates
+                                for i, prob in enumerate(row)],
+                            key=lambda x: x[1])[:k]
+        return topk_candidates
+
+    @staticmethod
+    def greedy_decoder(probabilities):
+        return np.argmax(label_ids_probability, axis=-1)
+
+    @staticmethod
+    def is_valid_labels(labels):
+        prev_bio, prev_netype, netype = '', '', ''
+        for l in labels:
+            if len(l.split('-')) == 2:
+                bio, netype = l.split('-')
+            else:
+                bio = l
+            # check two bad patterns like ['O', 'I-A', 'O'] or ['B-A', 'I-B', 'O']
+            if prev_bio == 'O' and bio == 'I' or prev_bio == 'B' and bio == 'I' and prev_netype != netype:
+                return False
+            prev_bio = bio
+            prev_netype = netype
+        return True
+
+    def is_valid_sequence(self, label_ids):
+        ignore_ids = {'X', '[CLS]', '[SEP]'}
+        labels = [self.db.id2label[i] for i in label_ids if self.db.id2label[i] not in ignore_ids]
+        return self.is_valid_labels(labels)
+
+    def predict(self, sentences=None, subword=False, validate=True):
         if sentences is None:
             predict_input_fn = self.db.make_input_fn(mode="predict")
             gold = True
@@ -814,7 +852,19 @@ class BERTNERPredictor:
             gold = False
 
         # prediction & make sequence tags word-wise
-        label_ids_pred = self.estimator.predict(input_fn=predict_input_fn)
+        label_ids_probability = self.estimator.predict(input_fn=predict_input_fn)
+
+        if self.decoder='greedy':
+            label_ids_pred = self.greedy_decoder(label_ids_probability)
+        else:
+            label_ids_beams = self.beam_search_decoder(label_ids_probability, self.beam_width)
+            label_ids_pred = label_ids_beams[0]
+            if self.valid_sequence:  # 妥当なラベル列のtopを採択
+                for beam in label_ids_beams:
+                    if self.is_valid_sequence(beam):
+                        label_ids_pred = beam
+                        break
+
         token_ids, label_ids_gold = [], []
         for input_batch in predict_input_fn({'batch_size': self.predict_batch_size}):
             for ids in input_batch['input_ids'].numpy():
@@ -843,22 +893,24 @@ if __name__=='__main__':
     output_dir = '../output_result_kb'
     model_dir = '../model_result_kb'
     bert_dir = '../Japanese_L-12_H-768_A-12_E-30_BPE'
+    train = True
+    n_epoch = 1
 
-
-    for i in range(1, 4):
-        bert_trainer = BERTNERTrainer(
-                        data_dir,
-                        labels_path,
-                        output_dir,
-                        bert_dir,
-                        model_dir,
-                        max_seq_length=128,
-                        save_checkpoints_steps=1000, learning_rate=5e-5,
-                        train_batch_size=8, eval_batch_size=8, warmup_proportion=0.1,
-                        num_train_epochs=i
-                        )
-        bert_trainer.train()
-        bert_trainer.evaluate()
+    for i in range(1, n_epoch + 1):
+        if train:
+            bert_trainer = BERTNERTrainer(
+                            data_dir,
+                            labels_path,
+                            output_dir,
+                            bert_dir,
+                            model_dir,
+                            max_seq_length=128,
+                            save_checkpoints_steps=1000, learning_rate=5e-5,
+                            train_batch_size=8, eval_batch_size=8, warmup_proportion=0.1,
+                            num_train_epochs=i
+                            )
+            bert_trainer.train()
+            bert_trainer.evaluate()
 
         bert_predictor = BERTNERPredictor(
                         labels_path,
