@@ -4,6 +4,7 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
+import multiprocessing
 import tensorflow as tf
 tf.enable_eager_execution()
 
@@ -807,17 +808,23 @@ class BERTNERPredictor:
         self.valid_sequence = valid_sequence
 
     @staticmethod
-    def beam_search_decoder(probabilities, k=5):
+    def __beam_search_decoder(args):
+        probability, k = args
+        topk_candidates = [(list(), 1.0)]
+        for row in probability:
+            topk_candidates = sorted([(seq + [i], score * -np.log(prob + 1e-5))
+                                        for seq, score in topk_candidates
+                                        for i, prob in enumerate(row)],
+                                        key=lambda x: x[1])[:k]
+        return topk_candidates
+
+    @classmethod
+    def beam_search_decoder(cls, probabilities, k=5):
         # (n_data, max_sequence_length, n_labels) -> (n_data, k, max_sequence_length)
-        results = []
-        for probability in probabilities:
-            topk_candidates = [(list(), 1.0)]
-            for row in probability:
-                topk_candidates = sorted([(seq + [i], score * -np.log(prob + 1e-5))
-                                          for seq, score in topk_candidates
-                                          for i, prob in enumerate(row)],
-                                         key=lambda x: x[1])[:k]
-            results.append(topk_candidates)
+        args = [(probability, k) for probability in probabilities]
+        results = []  # [cls.__beam_search_decoder((probability, k)) for probability in probabilities]
+        with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
+            results.append(p.map(cls.__beam_search_decoder, args))
         return results
 
     @staticmethod
@@ -825,26 +832,33 @@ class BERTNERPredictor:
         # (n_data, max_sequence_length, n_labels) -> (n_data, max_sequence_length)
         return np.argmax(probabilities, axis=-1)
 
-    @staticmethod
-    def is_valid_labels(labels):
-        prev_bio, prev_netype, netype = '', '', ''
-        for l in labels:
-            if len(l.split('-')) == 2:
-                bio, netype = l.split('-')
-            else:
-                bio = l
-            # check two bad patterns like ['O', 'I-A', 'O'] or ['B-A', 'I-B', 'O']
-            if prev_bio == 'O' and bio == 'I' or prev_bio == 'B' and bio == 'I' and prev_netype != netype:
-                return False
-            prev_bio = bio
-            prev_netype = netype
-        return True
+    def __convert_labels(self, label_ids):
+        ignore_ids = {'X', '[CLS]', '[SEP]', '[NULL]'}
+        labels = [self.db.id2label.get(i, '[NULL]') for i in label_ids if self.db.id2label.get(i, '[NULL]') not in ignore_ids]
 
-    def is_valid_sequence(self, label_ids):
-        # (n_data, max_sequence_length, n_labels) -> (n_data, k, max_sequence_length)
-        ignore_ids = {'X', '[CLS]', '[SEP]'}
-        labels = [self.db.id2label[i] for i in label_ids if self.db.id2label[i] not in ignore_ids]
-        return self.is_valid_labels(labels)
+    @staticmethod
+    def __is_valid_labels(args)
+        i, labels_beams = args
+        beam_idx = 0
+        for idx, label in enumerate(labels_beams):
+            flag = True
+            prev_bio, prev_netype, netype = '', '', ''
+            for l in labels:
+                if len(l.split('-')) == 2:
+                    bio, netype = l.split('-')
+                else:
+                    bio = l
+                # check two bad patterns like ['O', 'I-A', 'O'] or ['B-A', 'I-B', 'O']
+                if prev_bio == 'O' and bio == 'I' or prev_bio == 'B' and bio == 'I' and prev_netype != netype:
+                    flag = False
+                prev_bio = bio
+                prev_netype = netype
+            if flag:
+                beam_idx = idx
+                break
+        else:
+            beam_idx = 0
+        return (i, beam_idx)
 
     def predict(self, sentences=None, subword=False):
         if sentences is None:
@@ -861,15 +875,17 @@ class BERTNERPredictor:
             label_ids_pred = self.greedy_decoder(label_ids_probability)
         else:
             label_ids_beams_list = self.beam_search_decoder(label_ids_probability, self.beam_width)
-            label_ids_pred = []
-            for label_ids_beams in label_ids_beams_list:
-                label_ids = label_ids_beams[0]
-                if self.valid_sequence:  # 妥当なラベル列のtopを採択
-                    for beam in label_ids_beams:
-                        if self.is_valid_sequence(beam):
-                            label_ids = beam
-                            break
-                label_ids_pred.append(label_ids)
+            label_ids_beams_list = [[beam[0] for beam in label_ids_beams] for label_ids_beams in label_ids_beams_list]
+
+            if self.valid_sequence:  # 妥当なラベル列のtopを採択
+                labels_beams_list = [[self.__convert_labels(beam) for beam in label_ids_beams] for label_ids_beams in label_ids_beams_list]
+                args = [(i, labels_beams) for i, labels_beams in enumerate(labels_beams_list)]
+                label_ids_pred_idx = []
+                with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
+                    label_ids_pred_idx.append(p.map(self.__is_valid_labels, args))    
+                label_ids_pred = [label_ids_beams_list[i][beam_idx] for (i, beam_idx) in label_ids_pred_idx]
+            else:
+                label_ids_pred = [label_ids_beams[0] for label_ids_beams in label_ids_beams_list]
 
         token_ids, label_ids_gold = [], []
         for input_batch in predict_input_fn({'batch_size': self.predict_batch_size}):
