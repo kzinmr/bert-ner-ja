@@ -795,7 +795,7 @@ class BERTNERPredictor:
         vocab_path = os.path.join(bert_dir, 'vocab.txt')
 
         self.db = DataBuilder(data_dir, labels_path, vocab_path, output_dir, max_seq_length, drop_remainder, mode="predict")
-        assert drop_remainder and self.db.num_examples > predict_batch_size
+        assert not drop_remainder or drop_remainder and self.db.num_examples > predict_batch_size
 
         # Build model for prediction
         
