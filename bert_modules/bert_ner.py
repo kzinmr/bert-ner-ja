@@ -781,6 +781,39 @@ class BERTNERTrainer:
         self.db.export_result(result)
 
 
+def __beam_search_decoder(args):
+    probability, k = args
+    topk_candidates = [(list(), 1.0)]
+    for row in probability:
+        topk_candidates = sorted([(seq + [i], score * -np.log(prob + 1e-5))
+                                    for seq, score in topk_candidates
+                                    for i, prob in enumerate(row)],
+                                    key=lambda x: x[1])[:k]
+    return topk_candidates
+
+def __is_valid_labels(args):
+    i, labels_beams = args
+    beam_idx = 0
+    for idx, label in enumerate(labels_beams):
+        flag = True
+        prev_bio, prev_netype, netype = '', '', ''
+        for l in labels:
+            if len(l.split('-')) == 2:
+                bio, netype = l.split('-')
+            else:
+                bio = l
+            # check two bad patterns like ['O', 'I-A', 'O'] or ['B-A', 'I-B', 'O']
+            if prev_bio == 'O' and bio == 'I' or prev_bio == 'B' and bio == 'I' and prev_netype != netype:
+                flag = False
+            prev_bio = bio
+            prev_netype = netype
+        if flag:
+            beam_idx = idx
+            break
+    else:
+        beam_idx = 0
+    return (i, beam_idx)
+
 class BERTNERPredictor:
 
     def __init__(self, labels_path, output_dir, bert_dir, model_dir,
@@ -807,24 +840,13 @@ class BERTNERPredictor:
         self.beam_width = beam_width
         self.valid_sequence = valid_sequence
 
-    @staticmethod
-    def __beam_search_decoder(args):
-        probability, k = args
-        topk_candidates = [(list(), 1.0)]
-        for row in probability:
-            topk_candidates = sorted([(seq + [i], score * -np.log(prob + 1e-5))
-                                        for seq, score in topk_candidates
-                                        for i, prob in enumerate(row)],
-                                        key=lambda x: x[1])[:k]
-        return topk_candidates
-
     @classmethod
     def beam_search_decoder(cls, probabilities, k=5):
         # (n_data, max_sequence_length, n_labels) -> (n_data, k, max_sequence_length)
         args = [(probability, k) for probability in probabilities]
         results = []  # [cls.__beam_search_decoder((probability, k)) for probability in probabilities]
         with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
-            results.append(p.map(cls.__beam_search_decoder, args))
+            results.append(p.map(__beam_search_decoder, args))
         return results
 
     @staticmethod
@@ -835,30 +857,6 @@ class BERTNERPredictor:
     def __convert_labels(self, label_ids):
         ignore_ids = {'X', '[CLS]', '[SEP]', '[NULL]'}
         labels = [self.db.id2label.get(i, '[NULL]') for i in label_ids if self.db.id2label.get(i, '[NULL]') not in ignore_ids]
-
-    @staticmethod
-    def __is_valid_labels(args):
-        i, labels_beams = args
-        beam_idx = 0
-        for idx, label in enumerate(labels_beams):
-            flag = True
-            prev_bio, prev_netype, netype = '', '', ''
-            for l in labels:
-                if len(l.split('-')) == 2:
-                    bio, netype = l.split('-')
-                else:
-                    bio = l
-                # check two bad patterns like ['O', 'I-A', 'O'] or ['B-A', 'I-B', 'O']
-                if prev_bio == 'O' and bio == 'I' or prev_bio == 'B' and bio == 'I' and prev_netype != netype:
-                    flag = False
-                prev_bio = bio
-                prev_netype = netype
-            if flag:
-                beam_idx = idx
-                break
-        else:
-            beam_idx = 0
-        return (i, beam_idx)
 
     def predict(self, sentences=None, subword=False):
         if sentences is None:
@@ -882,7 +880,7 @@ class BERTNERPredictor:
                 args = [(i, labels_beams) for i, labels_beams in enumerate(labels_beams_list)]
                 label_ids_pred_idx = []
                 with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
-                    label_ids_pred_idx.append(p.map(self.__is_valid_labels, args))    
+                    label_ids_pred_idx.append(p.map(__is_valid_labels, args))    
                 label_ids_pred = [label_ids_beams_list[i][beam_idx] for (i, beam_idx) in label_ids_pred_idx]
             else:
                 label_ids_pred = [label_ids_beams[0] for label_ids_beams in label_ids_beams_list]
