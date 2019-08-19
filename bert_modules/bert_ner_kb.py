@@ -843,11 +843,12 @@ class BERTNERPredictor:
         return True
 
     def is_valid_sequence(self, label_ids):
+        # (n_data, max_sequence_length, n_labels) -> (n_data, k, max_sequence_length)
         ignore_ids = {'X', '[CLS]', '[SEP]'}
         labels = [self.db.id2label[i] for i in label_ids if self.db.id2label[i] not in ignore_ids]
         return self.is_valid_labels(labels)
 
-    def predict(self, sentences=None, subword=False, validate=True):
+    def predict(self, sentences=None, subword=False):
         if sentences is None:
             predict_input_fn = self.db.make_input_fn(mode="predict")
             gold = True
@@ -861,13 +862,16 @@ class BERTNERPredictor:
         if self.decoder=='greedy':
             label_ids_pred = self.greedy_decoder(label_ids_probability)
         else:
-            label_ids_beams = self.beam_search_decoder(label_ids_probability, self.beam_width)
-            label_ids_pred = label_ids_beams[0]
-            if self.valid_sequence:  # 妥当なラベル列のtopを採択
-                for beam in label_ids_beams:
-                    if self.is_valid_sequence(beam):
-                        label_ids_pred = beam
-                        break
+            label_ids_beams_list = self.beam_search_decoder(label_ids_probability, self.beam_width)
+            label_ids_pred = []
+            for label_ids_beams in label_ids_beams_list:
+                label_ids = label_ids_beams[0]
+                if self.valid_sequence:  # 妥当なラベル列のtopを採択
+                    for beam in label_ids_beams:
+                        if self.is_valid_sequence(beam):
+                            label_ids = beam
+                            break
+                label_ids_pred.append(label_ids)
 
         token_ids, label_ids_gold = [], []
         for input_batch in predict_input_fn({'batch_size': self.predict_batch_size}):
