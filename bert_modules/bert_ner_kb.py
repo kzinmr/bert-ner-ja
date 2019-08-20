@@ -13,6 +13,7 @@ import tokenization
 import optimization
 
 import tf_metrics
+from sklearn_crfsuite import metrics
 
 import pickle
 from collections import OrderedDict
@@ -611,7 +612,7 @@ class ModelBuilder:
                 )
     # import pysnooper
     # @pysnooper.snoop()
-    def create_model(self, bert_config, is_training, features, num_labels):
+    def create_model(self, bert_config, is_training, features, num_labels, ohe=False, embedding_size=20):
         """Creates a token-level classification model."""
 
         input_ids = features["input_ids"]
@@ -632,11 +633,15 @@ class ModelBuilder:
         # NEW: hidden_size+num_labels -> num_labels
 
         kblabel_ids = features["kblabel_ids"]  # [batch_size, seq_length, 1]
-        one_hot_kblabel_ids = tf.one_hot(kblabel_ids, depth=num_labels, dtype=tf.float32)  # [batch_size, seq_length, num_labels]
+        if ohe:
+            kblabel_layer = tf.one_hot(kblabel_ids, depth=num_labels, dtype=tf.float32)  # [batch_size, seq_length, num_labels]
+        else:
+            word_embeddings = tf.compat.v1.get_variable("word_embeddings", [num_labels, embedding_size], initializer=tf.truncated_normal_initializer(stddev=0.02))
+            kblabel_layer = tf.nn.embedding_lookup(word_embeddings, kblabel_ids)
 
         output_layer = model.get_sequence_output()  # [batch_size, seq_length, hidden_size]
         
-        output_layer = tf.concat([output_layer, one_hot_kblabel_ids], 2)  # [batch_size, seq_length, hidden_size + num_labels]
+        output_layer = tf.concat([output_layer, kblabel_layer], 2)  # [batch_size, seq_length, hidden_size + *]
         hidden_size = output_layer.shape[-1].value
 
         output_weights = tf.compat.v1.get_variable("output_weights", [num_labels, hidden_size], initializer=tf.truncated_normal_initializer(stddev=0.02))
@@ -645,10 +650,9 @@ class ModelBuilder:
         label_ids = features["label_ids"]
         with tf.compat.v1.variable_scope("loss"):
 
-            # ここもいじる
             if is_training:
                 output_layer = tf.nn.dropout(output_layer, rate=0.1)
-            output_layer = tf.reshape(output_layer, [-1, hidden_size])  # hidden_size+num_labels
+            output_layer = tf.reshape(output_layer, [-1, hidden_size])
 
             logits = tf.matmul(output_layer, output_weights, transpose_b=True)
             logits = tf.nn.bias_add(logits, output_bias)
