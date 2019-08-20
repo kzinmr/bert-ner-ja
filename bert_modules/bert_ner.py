@@ -13,6 +13,7 @@ import tokenization
 import optimization
 
 import tf_metrics
+from sklearn_crfsuite import metrics
 
 import pickle
 from collections import OrderedDict
@@ -785,34 +786,75 @@ def _beam_search_decoder(args):
     probability, k = args
     topk_candidates = [(list(), 1.0)]
     for row in probability:
-        topk_candidates = sorted([(seq + [i], score * -np.log(prob + 1e-5))
+        topk_candidates = sorted([(seq + [i], score * -np.log(prob))  # NOTE: prob==0.?
                                     for seq, score in topk_candidates
                                     for i, prob in enumerate(row)],
                                     key=lambda x: x[1])[:k]
     return topk_candidates
 
+def _is_valid(labels):
+    prev_bio, prev_netype, netype = '', '', ''
+    for l in labels:
+        if len(l.split('-')) == 2:
+            bio, netype = l.split('-')
+        else:
+            bio = l
+        # check two bad patterns like ['O', 'I-A', 'O'] or ['B-A', 'I-B', 'O']
+        if prev_bio == 'O' and bio == 'I' or prev_bio == 'B' and bio == 'I' and prev_netype != netype:
+            return False
+        prev_bio = bio
+        prev_netype = netype
+    return True
+
 def _is_valid_labels(args):
     i, labels_beams = args
     beam_idx = 0
     for idx, labels in enumerate(labels_beams):
-        flag = True
-        prev_bio, prev_netype, netype = '', '', ''
-        for l in labels:
-            if len(l.split('-')) == 2:
-                bio, netype = l.split('-')
-            else:
-                bio = l
-            # check two bad patterns like ['O', 'I-A', 'O'] or ['B-A', 'I-B', 'O']
-            if prev_bio == 'O' and bio == 'I' or prev_bio == 'B' and bio == 'I' and prev_netype != netype:
-                flag = False
-            prev_bio = bio
-            prev_netype = netype
-        if flag:
+        if _is_valid(labels):
             beam_idx = idx
             break
     else:
         beam_idx = 0
     return (i, beam_idx)
+
+def _remove_invalid_labels(labels):
+    if _is_valid(labels):
+        return labels
+
+    prev_bio, prev_netype, netype = '', '', ''
+    i = 0
+    remove_indices = []
+    while i < len(labels):
+        l = labels[i]
+        if len(l.split('-')) == 2:
+            bio, netype = l.split('-')
+        else:
+            bio = l
+        # check two bad patterns like ['O', 'I-A', 'O'] or ['B-A', 'I-B', 'O']
+        if prev_bio == 'O' and bio == 'I':
+            remove_from = i
+            j = i + 1
+            while labels[j].split('-')[0] != 'O':
+                j += 1
+            remove_to = j
+            remove_indices.append((remove_from, remove_to))
+            i = j
+        elif prev_bio == 'B' and bio == 'I' and prev_netype != netype:
+            remove_from = i
+            j = i + 1
+            while labels[j].split('-')[0] == 'I':
+                j += 1
+            remove_to = j
+            remove_indices.append((remove_from, remove_to))
+            i = j
+        else:
+            i += 1
+        prev_bio = bio
+        prev_netype = netype
+
+    for (rm_from, rm_to) in remove_indices:
+        labels[rm_from: rm_to] = ['[NULL]' for _ in range(rm_to - rm_from)]
+    return labels
 
 class BERTNERPredictor:
 
@@ -820,7 +862,7 @@ class BERTNERPredictor:
                     data_dir=None,
                     max_seq_length=128, predict_batch_size=8,
                     drop_remainder=True,
-                    decoder='beam', beam_width=5, valid_sequence=True):
+                    decoder='beam', beam_width=5, valid_sequence=True, fix_invalid_labels=True):
 
 
         bert_config_file = os.path.join(bert_dir, 'bert_config.json')
@@ -839,6 +881,7 @@ class BERTNERPredictor:
         self.decoder = decoder
         self.beam_width = beam_width
         self.valid_sequence = valid_sequence
+        self.fix_invalid_labels = fix_invalid_labels
 
     @classmethod
     def beam_search_decoder(cls, probabilities, k=5):
@@ -855,10 +898,10 @@ class BERTNERPredictor:
         return np.argmax(probabilities, axis=-1)
 
     def __convert_labels(self, label_ids):
-        ignore_ids = {'X', '[CLS]', '[SEP]', '[NULL]'}
-        return [self.db.id2label.get(i, '[NULL]') for i in label_ids if self.db.id2label.get(i, '[NULL]') not in ignore_ids]
+        # ignore_ids = {'X', '[CLS]', '[SEP]', '[NULL]'}
+        return [self.db.id2label.get(i, '[NULL]') for i in label_ids]
 
-    def predict(self, sentences=None, subword=False):
+    def predict(self, sentences=None, subword=False, decoder=None, fix_invalid_labels=None):
         if sentences is None:
             predict_input_fn = self.db.make_input_fn(mode="predict")
             gold = True
@@ -866,10 +909,16 @@ class BERTNERPredictor:
             predict_input_fn = self.db.make_input_fn_from_sentences(sentences)
             gold = False
 
+        if decoder is None:
+            decoder = self.decoder
+        if fix_invalid_labels is None:
+            fix_invalid_labels = self.fix_invalid_labels
+
         # prediction & make sequence tags word-wise
         label_ids_probability = self.estimator.predict(input_fn=predict_input_fn)
 
-        if self.decoder=='greedy':
+        if decoder=='greedy':
+            label_ids_probability = [p for p in label_ids_probability]
             label_ids_pred = self.greedy_decoder(label_ids_probability)
         else:
             label_ids_beams_list = self.beam_search_decoder(label_ids_probability, self.beam_width)
@@ -877,6 +926,7 @@ class BERTNERPredictor:
 
             if self.valid_sequence:  # 妥当なラベル列のtopを採択
                 labels_beams_list = [[self.__convert_labels(beam) for beam in label_ids_beams] for label_ids_beams in label_ids_beams_list]
+                # validationを満たすbeamを選択; 無ければ先頭のbeam
                 args = [(i, labels_beams) for i, labels_beams in enumerate(labels_beams_list)]
                 label_ids_pred_idx = []
                 with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
@@ -885,6 +935,15 @@ class BERTNERPredictor:
                 label_ids_pred = [label_ids_beams_list[i][beam_idx] for (i, beam_idx) in label_ids_pred_idx]
             else:
                 label_ids_pred = [label_ids_beams[0] for label_ids_beams in label_ids_beams_list]
+
+        if fix_invalid_labels:
+            # validationを満たさないラベル箇所を修正(特別な後処理なし)
+            args = [self.__convert_labels(label_ids) for label_ids in label_ids_pred]
+            labels_fixed = []
+            with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
+                labels_fixed.append(p.map(_remove_invalid_labels, args))
+            labels_fixed = labels_fixed[0]
+            label_ids_pred = [[self.db.label2id.get(i, 0) for l in labels] for labels in labels_fixed]
 
         token_ids, label_ids_gold = [], []
         for input_batch in predict_input_fn({'batch_size': self.predict_batch_size}):
@@ -907,6 +966,14 @@ class BERTNERPredictor:
                         for token, label_pred in zip(tokens, labels_pred)]
                     for tokens, labels_pred in zip(tokens_list, labels_list_pred)]
 
+def show_report(result, LABELS, report_path):
+    y_pred = [[l['pred'] for l in s] for s in result]
+    y_gold = [[l['gold'] for l in s] for s in result]
+    with open(report_path, 'w') as f:
+        s = metrics.flat_classification_report(y_gold, y_pred, labels=sorted(LABELS), digits=3)
+        print(s)
+        print(s, file=f)
+
 
 if __name__=='__main__':
     data_dir = '../input_kb'  # must contain 'train.txt', 'dev.txt', 'test.txt'
@@ -915,7 +982,9 @@ if __name__=='__main__':
     model_dir = '../model_result_base'
     bert_dir = '../Japanese_L-12_H-768_A-12_E-30_BPE'
     train = True
-    n_epoch = 1
+    n_epoch = 5
+    with open(labels_path) as f:
+        LABELS = [line for line in f.read().split('\n')]
 
     for i in range(1, n_epoch + 1):
         if train:
@@ -943,17 +1012,15 @@ if __name__=='__main__':
                         predict_batch_size=8,
                         drop_remainder=True
                         )
-        result = bert_predictor.predict()
-
-        from sklearn_crfsuite import metrics
-        with open(labels_path) as f:
-            LABELS = [line for line in f.read().split('\n')]
-
-
-        y_pred = [[l['pred'] for l in s] for s in result]
-        y_gold = [[l['gold'] for l in s] for s in result]
-
-        with open(output_dir + f'/classification_report_epoch{i}.txt', 'w') as f:
-            s = metrics.flat_classification_report(y_gold, y_pred, labels=sorted(LABELS), digits=3)
-            print(s)
-            print(s, file=f)
+        result = bert_predictor.predict(decoder='greedy', fix_invalid_labels=False))
+        report_path = output_dir + f'/classification_report_epoch{i}_greedy_nofix.txt'
+        show_report(result, LABELS, report_path)
+        result = bert_predictor.predict(decoder='greedy', fix_invalid_labels=True))
+        report_path = output_dir + f'/classification_report_epoch{i}_greedy_fix.txt'
+        show_report(result, LABELS, report_path)
+        result = bert_predictor.predict(decoder='beam', fix_invalid_labels=False))
+        report_path = output_dir + f'/classification_report_epoch{i}_beam_nofix.txt'
+        show_report(result, LABELS, report_path)
+        result = bert_predictor.predict(decoder='beam', fix_invalid_labels=True))
+        report_path = output_dir + f'/classification_report_epoch{i}_beam_fix.txt'
+        show_report(result, LABELS, report_path)
