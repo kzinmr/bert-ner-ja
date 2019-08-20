@@ -944,7 +944,7 @@ class BERTNERPredictor:
             with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
                 labels_fixed.append(p.map(_remove_invalid_labels, args))
             labels_fixed = labels_fixed[0]
-            label_ids_pred = [[self.db.label2id.get(i, 0) for l in labels] for labels in labels_fixed]
+            label_ids_pred = [[self.db.label2id.get(l, 0) for l in labels] for labels in labels_fixed]
 
         token_ids, label_ids_gold = [], []
         for input_batch in predict_input_fn({'batch_size': self.predict_batch_size}):
