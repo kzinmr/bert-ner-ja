@@ -818,13 +818,14 @@ def _is_valid_labels(args):
     return (i, beam_idx)
 
 def _remove_invalid_labels(labels):
-    if _is_valid(labels):
+    if _is_valid(labels) or len(labels) == 0:
         return labels
 
     prev_bio, prev_netype, netype = '', '', ''
     i = 0
     remove_indices = []
-    while i < len(labels):
+    seq_length = len(labels)
+    while i < seq_length:
         l = labels[i]
         if len(l.split('-')) == 2:
             bio, netype = l.split('-')
@@ -834,7 +835,7 @@ def _remove_invalid_labels(labels):
         if prev_bio == 'O' and bio == 'I':
             remove_from = i
             j = i + 1
-            while labels[j].split('-')[0] != 'O':
+            while j < seq_length and labels[j].split('-')[0] != 'O':
                 j += 1
             remove_to = j
             remove_indices.append((remove_from, remove_to))
@@ -842,7 +843,7 @@ def _remove_invalid_labels(labels):
         elif prev_bio == 'B' and bio == 'I' and prev_netype != netype:
             remove_from = i
             j = i + 1
-            while labels[j].split('-')[0] == 'I':
+            while j < seq_length and labels[j].split('-')[0] == 'I':
                 j += 1
             remove_to = j
             remove_indices.append((remove_from, remove_to))
@@ -1012,15 +1013,15 @@ if __name__=='__main__':
                         predict_batch_size=8,
                         drop_remainder=True
                         )
-        result = bert_predictor.predict(decoder='greedy', fix_invalid_labels=False))
+        result = bert_predictor.predict(decoder='greedy', fix_invalid_labels=False)
         report_path = output_dir + f'/classification_report_epoch{i}_greedy_nofix.txt'
         show_report(result, LABELS, report_path)
-        result = bert_predictor.predict(decoder='greedy', fix_invalid_labels=True))
+        result = bert_predictor.predict(decoder='greedy', fix_invalid_labels=True)
         report_path = output_dir + f'/classification_report_epoch{i}_greedy_fix.txt'
         show_report(result, LABELS, report_path)
-        result = bert_predictor.predict(decoder='beam', fix_invalid_labels=False))
+        result = bert_predictor.predict(decoder='beam', fix_invalid_labels=False)
         report_path = output_dir + f'/classification_report_epoch{i}_beam_nofix.txt'
         show_report(result, LABELS, report_path)
-        result = bert_predictor.predict(decoder='beam', fix_invalid_labels=True))
+        result = bert_predictor.predict(decoder='beam', fix_invalid_labels=True)
         report_path = output_dir + f'/classification_report_epoch{i}_beam_fix.txt'
         show_report(result, LABELS, report_path)
