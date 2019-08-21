@@ -970,12 +970,12 @@ def show_report(result, LABELS, report_path, to_print=True):
 if __name__=='__main__':
     data_dir = '../input_kb'  # must contain 'train.txt', 'dev.txt', 'test.txt'
     labels_path = '../input_kb/labels_enesub.txt'
-    output_dir = '../outputs_result_base'
+    output_dir = '../output_result_base'
     model_dir = '../model_result_base'
     bert_dir = '../Japanese_L-12_H-768_A-12_E-30_BPE'
     train = True
     to_print = True
-    n_epoch = 5
+    n_epoch = 10
     with open(labels_path) as f:
         LABELS = [line for line in f.read().split('\n')]
 
@@ -1005,15 +1005,19 @@ if __name__=='__main__':
                         predict_batch_size=8,
                         drop_remainder=True
                         )
-        result = bert_predictor.predict(decoder='greedy', fix_invalid_labels=False, export_file=f"token_label_list_epoch{i}_greedy_nofix.txt")
+        export_path = output_dir + f"/token_label_list_epoch{i}_greedy_nofix.txt"
+        result = bert_predictor.predict(decoder='greedy', fix_invalid_labels=False, export_file=export_path)
         report_path = output_dir + f'/classification_report_epoch{i}_greedy_nofix.txt'
         show_report(result, LABELS, report_path, to_print)
-        result = bert_predictor.predict(decoder='greedy', fix_invalid_labels=True, export_file=f"token_label_list_epoch{i}_greedy_fix.txt")
+        export_path = output_dir + f"/token_label_list_epoch{i}_greedy_fix.txt"
+        result = bert_predictor.predict(decoder='greedy', fix_invalid_labels=True, export_file=export_path)
         report_path = output_dir + f'/classification_report_epoch{i}_greedy_fix.txt'
         show_report(result, LABELS, report_path, to_print)
-        result = bert_predictor.predict(decoder='beam', fix_invalid_labels=False, export_file=f"token_label_list_epoch{i}_beam_nofix.txt")
+        export_path = output_dir + f"/token_label_list_epoch{i}_beam_nofix.txt"
+        result = bert_predictor.predict(decoder='beam', fix_invalid_labels=False, export_file=export_path)
         report_path = output_dir + f'/classification_report_epoch{i}_beam_nofix.txt'
         show_report(result, LABELS, report_path, to_print)
-        result = bert_predictor.predict(decoder='beam', fix_invalid_labels=True, export_file=f"token_label_list_epoch{i}_beam_fix.txt")
+        export_path = output_dir + f"/token_label_list_epoch{i}_beam_fix.txt"
+        result = bert_predictor.predict(decoder='beam', fix_invalid_labels=True, export_file=export_path)
         report_path = output_dir + f'/classification_report_epoch{i}_beam_fix.txt'
         show_report(result, LABELS, report_path, to_print)
