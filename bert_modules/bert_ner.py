@@ -827,20 +827,15 @@ def _remove_invalid_labels(labels):
     seq_length = len(labels)
     while i < seq_length:
         l = labels[i]
+        if l == 'X':
+            i += 1
+            continue
         if len(l.split('-')) == 2:
             bio, netype = l.split('-')
         else:
             bio = l
         # check two bad patterns like ['O', 'I-A', 'O'] or ['B-A', 'I-B', 'O']
-        if prev_bio == 'O' and bio == 'I':
-            remove_from = i
-            j = i + 1
-            while j < seq_length and labels[j].split('-')[0] != 'O':
-                j += 1
-            remove_to = j
-            remove_indices.append((remove_from, remove_to))
-            i = j
-        elif prev_bio == 'B' and bio == 'I' and prev_netype != netype:
+        if prev_bio == 'O' and bio == 'I' or prev_bio == 'B' and bio == 'I' and prev_netype != netype:
             remove_from = i
             j = i + 1
             while j < seq_length and labels[j].split('-')[0] == 'I':
@@ -854,7 +849,7 @@ def _remove_invalid_labels(labels):
         prev_netype = netype
 
     for (rm_from, rm_to) in remove_indices:
-        labels[rm_from: rm_to] = ['[NULL]' for _ in range(rm_to - rm_from)]
+        labels[rm_from: rm_to] = ['O' for _ in range(rm_to - rm_from)]
     return labels
 
 class BERTNERPredictor:
@@ -915,11 +910,16 @@ class BERTNERPredictor:
         if fix_invalid_labels is None:
             fix_invalid_labels = self.fix_invalid_labels
 
+        for input_batch in predict_input_fn({'batch_size': self.predict_batch_size}):
+            print( input_batch['input_ids'].numpy() )
+            print( input_batch['label_ids'].numpy() )
+
         # prediction & make sequence tags word-wise
         label_ids_probability = self.estimator.predict(input_fn=predict_input_fn)
 
         if decoder=='greedy':
             label_ids_probability = [p for p in label_ids_probability]
+            print(label_ids_probability)
             label_ids_pred = self.greedy_decoder(label_ids_probability)
         else:
             label_ids_beams_list = self.beam_search_decoder(label_ids_probability, self.beam_width)
@@ -940,10 +940,12 @@ class BERTNERPredictor:
         if fix_invalid_labels:
             # validationを満たさないラベル箇所を修正(特別な後処理なし)
             args = [self.__convert_labels(label_ids) for label_ids in label_ids_pred]
+            print(args)
             labels_fixed = []
             with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
                 labels_fixed.append(p.map(_remove_invalid_labels, args))
             labels_fixed = labels_fixed[0]
+            print(labels_fixed)
             label_ids_pred = [[self.db.label2id.get(l, 0) for l in labels] for labels in labels_fixed]
 
         token_ids, label_ids_gold = [], []
@@ -967,23 +969,24 @@ class BERTNERPredictor:
                         for token, label_pred in zip(tokens, labels_pred)]
                     for tokens, labels_pred in zip(tokens_list, labels_list_pred)]
 
-def show_report(result, LABELS, report_path):
+def show_report(result, LABELS, report_path, to_print=True):
     y_pred = [[l['pred'] for l in s] for s in result]
     y_gold = [[l['gold'] for l in s] for s in result]
     with open(report_path, 'w') as f:
         s = metrics.flat_classification_report(y_gold, y_pred, labels=sorted(LABELS), digits=3)
-        print(s)
+        if to_print:
+            print(s)
         print(s, file=f)
 
 
 if __name__=='__main__':
-    data_dir = '../input_kb'  # must contain 'train.txt', 'dev.txt', 'test.txt'
+    data_dir = '../input_kb_test'  # must contain 'train.txt', 'dev.txt', 'test.txt'
     labels_path = '../input_kb/labels_enesub.txt'
-    output_dir = '../output_result_base'
-    model_dir = '../model_result_base'
+    output_dir = '../outputs'  #_result_base_test'
+    model_dir = '../model_result_base_ep9'
     bert_dir = '../Japanese_L-12_H-768_A-12_E-30_BPE'
-    train = True
-    n_epoch = 5
+    train = False
+    n_epoch = 1
     with open(labels_path) as f:
         LABELS = [line for line in f.read().split('\n')]
 
@@ -1011,17 +1014,18 @@ if __name__=='__main__':
                         data_dir=data_dir,
                         max_seq_length=128,
                         predict_batch_size=8,
-                        drop_remainder=True
+                        drop_remainder=False
                         )
+        to_print=False
         result = bert_predictor.predict(decoder='greedy', fix_invalid_labels=False)
         report_path = output_dir + f'/classification_report_epoch{i}_greedy_nofix.txt'
-        show_report(result, LABELS, report_path)
+        show_report(result, LABELS, report_path, to_print)
         result = bert_predictor.predict(decoder='greedy', fix_invalid_labels=True)
         report_path = output_dir + f'/classification_report_epoch{i}_greedy_fix.txt'
-        show_report(result, LABELS, report_path)
+        show_report(result, LABELS, report_path, to_print)
         result = bert_predictor.predict(decoder='beam', fix_invalid_labels=False)
         report_path = output_dir + f'/classification_report_epoch{i}_beam_nofix.txt'
-        show_report(result, LABELS, report_path)
+        show_report(result, LABELS, report_path, to_print)
         result = bert_predictor.predict(decoder='beam', fix_invalid_labels=True)
         report_path = output_dir + f'/classification_report_epoch{i}_beam_fix.txt'
-        show_report(result, LABELS, report_path)
+        show_report(result, LABELS, report_path, to_print)

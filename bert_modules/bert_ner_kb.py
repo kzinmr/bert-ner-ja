@@ -833,20 +833,15 @@ def _remove_invalid_labels(labels):
     seq_length = len(labels)
     while i < seq_length:
         l = labels[i]
+        if l == 'X':
+            i += 1
+            continue
         if len(l.split('-')) == 2:
             bio, netype = l.split('-')
         else:
             bio = l
         # check two bad patterns like ['O', 'I-A', 'O'] or ['B-A', 'I-B', 'O']
-        if prev_bio == 'O' and bio == 'I':
-            remove_from = i
-            j = i + 1
-            while j < seq_length and labels[j].split('-')[0] != 'O':
-                j += 1
-            remove_to = j
-            remove_indices.append((remove_from, remove_to))
-            i = j
-        elif prev_bio == 'B' and bio == 'I' and prev_netype != netype:
+        if prev_bio == 'O' and bio == 'I' or prev_bio == 'B' and bio == 'I' and prev_netype != netype:
             remove_from = i
             j = i + 1
             while j < seq_length and labels[j].split('-')[0] == 'I':
@@ -860,7 +855,7 @@ def _remove_invalid_labels(labels):
         prev_netype = netype
 
     for (rm_from, rm_to) in remove_indices:
-        labels[rm_from: rm_to] = ['[NULL]' for _ in range(rm_to - rm_from)]
+        labels[rm_from: rm_to] = ['O' for _ in range(rm_to - rm_from)]
     return labels
 
 class BERTNERPredictor:
