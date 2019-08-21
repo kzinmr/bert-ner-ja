@@ -203,10 +203,8 @@ class DataBuilder:
             else:
                 self.word_tokenizer = KnpBase(jumanpp=True)
 
-            export_file = os.path.join(self.output_dir, "token_label_pred.txt")
             self.swc = SubwordWordConverter(self.tokenizer,
-                                            self.id2label,
-                                            export_file)
+                                            self.id2label)
 
     def convert_single_example(self, ex_index, example):
         """Converts a single `InputExample` into a single `InputFeatures`."""
@@ -442,7 +440,7 @@ class DataBuilder:
 
 class SubwordWordConverter:
 
-    def __init__(self, tokenizer, id2label, export_file=None):
+    def __init__(self, tokenizer, id2label):
         self.tokenizer = tokenizer
         self.id2label = id2label
         label2id = {v: k for k, v in id2label.items()}
@@ -457,8 +455,6 @@ class SubwordWordConverter:
         self.TOKENID_SEP = tokenizer.convert_tokens_to_ids(['[SEP]'])[0]
         self.ignore_token_ids = {self.TOKENID_PAD,
                                  self.TOKENID_CLS, self.TOKENID_SEP}
-
-        self.export_file = export_file
 
     @staticmethod
     def convert_subword_to_word_by_label(subwords, labels_gold):
@@ -536,7 +532,7 @@ class SubwordWordConverter:
 
         return words, labels_pred, labels_gold
 
-    def convert_ids_to_surfaces_list(self, token_ids_list, label_ids_list_pred, label_ids_list_gold, subword=False):
+    def convert_ids_to_surfaces_list(self, token_ids_list, label_ids_list_pred, label_ids_list_gold, subword=False, export_file=None):
         tf.compat.v1.logging.info("***** Predict results *****")
         output_sentences = []
         tokens_list, labels_list_pred, labels_list_gold = [], [], []
@@ -549,14 +545,14 @@ class SubwordWordConverter:
                 labels_list_gold.append(labels_gold)
 
                 # export
-                if self.export_file is not None:
+                if export_file is not None:
                     output_lines = [f'{word}\t{label}\t{label_gold}'
                                     for word, label, label_gold in zip(words, labels_pred, labels_gold)]
                     output_line = "\n".join(output_lines)
                     output_line += "\n\n"
                     output_sentences.append(output_line)
-        if self.export_file is not None:
-            with open(self.export_file, 'w', encoding='utf-8') as writer:
+        if export_file is not None:
+            with open(export_file, 'w', encoding='utf-8') as writer:
                 for output_sentence in output_sentences:
                     writer.write(output_sentence)
 
@@ -643,10 +639,9 @@ class ModelBuilder:
         label_ids = features["label_ids"]
         with tf.compat.v1.variable_scope("loss"):
 
-            # ここもいじる
             if is_training:
                 output_layer = tf.nn.dropout(output_layer, rate=0.1)
-            output_layer = tf.reshape(output_layer, [-1, hidden_size])  # hidden_size+num_labels
+            output_layer = tf.reshape(output_layer, [-1, hidden_size])
 
             logits = tf.matmul(output_layer, output_weights, transpose_b=True)
             logits = tf.nn.bias_add(logits, output_bias)
@@ -897,7 +892,7 @@ class BERTNERPredictor:
         # ignore_ids = {'X', '[CLS]', '[SEP]', '[NULL]'}
         return [self.db.id2label.get(i, '[NULL]') for i in label_ids]
 
-    def predict(self, sentences=None, subword=False, decoder=None, fix_invalid_labels=None):
+    def predict(self, sentences=None, subword=False, decoder=None, fix_invalid_labels=None, export_file="token_label_list"):
         if sentences is None:
             predict_input_fn = self.db.make_input_fn(mode="predict")
             gold = True
@@ -910,16 +905,11 @@ class BERTNERPredictor:
         if fix_invalid_labels is None:
             fix_invalid_labels = self.fix_invalid_labels
 
-        for input_batch in predict_input_fn({'batch_size': self.predict_batch_size}):
-            print( input_batch['input_ids'].numpy() )
-            print( input_batch['label_ids'].numpy() )
-
         # prediction & make sequence tags word-wise
         label_ids_probability = self.estimator.predict(input_fn=predict_input_fn)
 
         if decoder=='greedy':
             label_ids_probability = [p for p in label_ids_probability]
-            print(label_ids_probability)
             label_ids_pred = self.greedy_decoder(label_ids_probability)
         else:
             label_ids_beams_list = self.beam_search_decoder(label_ids_probability, self.beam_width)
@@ -940,12 +930,10 @@ class BERTNERPredictor:
         if fix_invalid_labels:
             # validationを満たさないラベル箇所を修正(特別な後処理なし)
             args = [self.__convert_labels(label_ids) for label_ids in label_ids_pred]
-            print(args)
             labels_fixed = []
             with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
                 labels_fixed.append(p.map(_remove_invalid_labels, args))
             labels_fixed = labels_fixed[0]
-            print(labels_fixed)
             label_ids_pred = [[self.db.label2id.get(l, 0) for l in labels] for labels in labels_fixed]
 
         token_ids, label_ids_gold = [], []
@@ -958,7 +946,7 @@ class BERTNERPredictor:
 
         # convert subwords-unit to words-unit
         tokens_list, labels_list_pred, labels_list_gold =\
-            self.db.swc.convert_ids_to_surfaces_list(token_ids, label_ids_pred, label_ids_gold, subword=subword)
+            self.db.swc.convert_ids_to_surfaces_list(token_ids, label_ids_pred, label_ids_gold, subword=subword, export_file=export_file)
 
         if gold:
             return [[{'token': token, 'pred': label_pred, 'gold': label_gold}
@@ -980,13 +968,14 @@ def show_report(result, LABELS, report_path, to_print=True):
 
 
 if __name__=='__main__':
-    data_dir = '../input_kb_test'  # must contain 'train.txt', 'dev.txt', 'test.txt'
+    data_dir = '../input_kb'  # must contain 'train.txt', 'dev.txt', 'test.txt'
     labels_path = '../input_kb/labels_enesub.txt'
-    output_dir = '../outputs'  #_result_base_test'
-    model_dir = '../model_result_base_ep9'
+    output_dir = '../outputs_result_base'
+    model_dir = '../model_result_base'
     bert_dir = '../Japanese_L-12_H-768_A-12_E-30_BPE'
-    train = False
-    n_epoch = 1
+    train = True
+    to_print = True
+    n_epoch = 5
     with open(labels_path) as f:
         LABELS = [line for line in f.read().split('\n')]
 
@@ -1014,18 +1003,17 @@ if __name__=='__main__':
                         data_dir=data_dir,
                         max_seq_length=128,
                         predict_batch_size=8,
-                        drop_remainder=False
+                        drop_remainder=True
                         )
-        to_print=False
-        result = bert_predictor.predict(decoder='greedy', fix_invalid_labels=False)
+        result = bert_predictor.predict(decoder='greedy', fix_invalid_labels=False, export_file=f"token_label_list_epoch{i}_greedy_nofix.txt")
         report_path = output_dir + f'/classification_report_epoch{i}_greedy_nofix.txt'
         show_report(result, LABELS, report_path, to_print)
-        result = bert_predictor.predict(decoder='greedy', fix_invalid_labels=True)
+        result = bert_predictor.predict(decoder='greedy', fix_invalid_labels=True, export_file=f"token_label_list_epoch{i}_greedy_fix.txt")
         report_path = output_dir + f'/classification_report_epoch{i}_greedy_fix.txt'
         show_report(result, LABELS, report_path, to_print)
-        result = bert_predictor.predict(decoder='beam', fix_invalid_labels=False)
+        result = bert_predictor.predict(decoder='beam', fix_invalid_labels=False, export_file=f"token_label_list_epoch{i}_beam_nofix.txt")
         report_path = output_dir + f'/classification_report_epoch{i}_beam_nofix.txt'
         show_report(result, LABELS, report_path, to_print)
-        result = bert_predictor.predict(decoder='beam', fix_invalid_labels=True)
+        result = bert_predictor.predict(decoder='beam', fix_invalid_labels=True, export_file=f"token_label_list_epoch{i}_beam_fix.txt")
         report_path = output_dir + f'/classification_report_epoch{i}_beam_fix.txt'
         show_report(result, LABELS, report_path, to_print)
